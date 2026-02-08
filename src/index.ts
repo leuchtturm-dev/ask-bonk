@@ -122,7 +122,12 @@ stats.get("/events", async (c) => {
     const data = await queryAnalyticsEngine(c.env, eventsPerRepoQuery);
     if (c.req.query("format") === "json") return c.json({ data });
     return c.text(
-      renderBarChart(data, "Webhook events per repo (last 30d)", "repo", "event_count"),
+      renderBarChart(
+        data,
+        "Webhook events per repo (last 30d)",
+        "repo",
+        "event_count",
+      ),
     );
   } catch (error) {
     log.errorWithException("stats_query_failed", error);
@@ -148,7 +153,12 @@ stats.get("/actors", async (c) => {
     const data = await queryAnalyticsEngine(c.env, eventsByActorQuery);
     if (c.req.query("format") === "json") return c.json({ data });
     return c.text(
-      renderBarChart(data, "Mentions per actor (last 7d)", "actor", "event_count"),
+      renderBarChart(
+        data,
+        "Mentions per actor (last 7d)",
+        "actor",
+        "event_count",
+      ),
     );
   } catch (error) {
     log.errorWithException("stats_query_failed", error);
@@ -459,11 +469,7 @@ apiGithub.post("/track", async (c) => {
   if (oidcResult.isErr())
     return c.json({ error: oidcResult.error.message }, 401);
 
-  const {
-    owner: claimsOwner,
-    repo: claimsRepo,
-    claims,
-  } = oidcResult.value;
+  const { owner: claimsOwner, repo: claimsRepo, claims } = oidcResult.value;
   if (claimsOwner !== body.owner || claimsRepo !== body.repo) {
     return c.json(
       {
@@ -588,11 +594,7 @@ apiGithub.put("/track", async (c) => {
   if (oidcResult.isErr())
     return c.json({ error: oidcResult.error.message }, 401);
 
-  const {
-    owner: claimsOwner,
-    repo: claimsRepo,
-    claims,
-  } = oidcResult.value;
+  const { owner: claimsOwner, repo: claimsRepo, claims } = oidcResult.value;
   if (claimsOwner !== body.owner || claimsRepo !== body.repo) {
     return c.json(
       {
@@ -945,6 +947,7 @@ async function handlePRReviewEvent(
 async function handlePullRequestEvent(
   payload: PullRequestEvent,
 ): Promise<void> {
+  // parsePullRequestEvent always returns (no null case) — all PR actions pass through
   const parsed = parsePullRequestEvent(payload);
 
   createLogger({
