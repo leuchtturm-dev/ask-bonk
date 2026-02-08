@@ -46,7 +46,7 @@ async function main() {
     run_id: context.runId,
     run_url: context.runUrl,
     issue_number: context.issue.number,
-    created_at: context.comment?.createdAt || new Date().toISOString(),
+    created_at: context.createdAt,
   };
 
   // Add reaction target based on event type
@@ -62,8 +62,10 @@ async function main() {
       }
       break;
     case "issues":
-      if (context.issue?.id) {
-        payload.issue_id = context.issue.id;
+      // issue_id is used by the Worker to create a reaction on the issue itself.
+      // The reaction API takes the issue number, not the database ID.
+      if (context.issue?.number) {
+        payload.issue_id = context.issue.number;
       }
       break;
     case "pull_request":
