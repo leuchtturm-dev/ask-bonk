@@ -66,6 +66,9 @@ async function main() {
         payload.issue_id = context.issue.id;
       }
       break;
+    case "pull_request":
+      // No reaction target — the PR itself is the trigger, not a comment
+      break;
   }
 
   const response = await fetch(`${apiBase}/api/github/track`, {
