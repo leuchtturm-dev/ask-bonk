@@ -71,6 +71,9 @@ async function main() {
     case "pull_request":
       // No reaction target — the PR itself is the trigger, not a comment
       break;
+    case "pull_request_review":
+      // PR reviews don't support reactions via the REST API
+      break;
   }
 
   const response = await fetch(`${apiBase}/api/github/track`, {
