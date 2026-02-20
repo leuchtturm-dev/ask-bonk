@@ -437,6 +437,17 @@ export class RepoAgent extends Agent<Env, RepoAgentState> {
     const key = this.failureCommentKey(issueNumber, run);
     const isReviewThread = run?.reactionTargetType === "pull_request_review_comment" && run.reactionTargetId;
 
+    // Emit workflow-failure metric unconditionally — callers in
+    // handleWorkflowRunCompleted rely on this firing for every failure.
+    emitMetric(this.env, {
+      repo: `${this.owner}/${this.repo}`,
+      eventType: "failure_comment",
+      status: "failure",
+      errorCode: conclusion ?? "unknown",
+      issueNumber,
+      runId,
+    });
+
     try {
       const octokit = existingOctokit ?? (await this.getOctokit());
 
@@ -500,16 +511,14 @@ export class RepoAgent extends Agent<Env, RepoAgentState> {
       });
     } catch (error) {
       log.errorWithException("failure_comment_failed", error, { conclusion });
+      emitMetric(this.env, {
+        repo: `${this.owner}/${this.repo}`,
+        eventType: "failure_comment_error",
+        status: "error",
+        errorCode: error instanceof Error ? error.message.slice(0, 100) : "unknown",
+        issueNumber,
+        runId,
+      });
     }
-
-    // Emit failure metric to WAE so /stats/errors captures workflow failures
-    emitMetric(this.env, {
-      repo: `${this.owner}/${this.repo}`,
-      eventType: "failure_comment",
-      status: "failure",
-      errorCode: conclusion ?? "unknown",
-      issueNumber,
-      runId,
-    });
   }
 }
