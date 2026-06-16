@@ -45,7 +45,7 @@ import { log, createLogger, sanitizeSecrets } from "./log";
 const GITHUB_REPO_URL = "https://github.com/ask-bonk/ask-bonk";
 
 function isAllowedOrg(owner: string, env: Env): boolean {
-  const allowed = env.ALLOWED_ORGS ?? [];
+  const allowed: readonly string[] = env.ALLOWED_ORGS ?? [];
   if (allowed.length === 0) return true;
   return allowed.map((o) => o.toLowerCase()).includes(owner.toLowerCase());
 }
@@ -83,7 +83,9 @@ const app = new Hono<{ Bindings: Env }>();
 
 app.get("/", (c) => c.redirect(GITHUB_REPO_URL, 302));
 app.get("/health", (c) => c.text("OK"));
-app.get("/version", (c) => c.json({ version: __VERSION__, commit: __COMMIT__ }));
+app.get("/version", (c) =>
+  c.json({ version: c.env.BONK_VERSION ?? "dev", commit: c.env.BONK_COMMIT ?? "unknown" }),
+);
 
 // Stats endpoints - public dashboards for webhook analytics
 const stats = new Hono<{ Bindings: Env }>();

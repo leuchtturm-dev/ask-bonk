@@ -3,6 +3,13 @@
   "name": "ask-bonk",
   "main": "src/index.ts",
   "compatibility_date": "2026-06-16",
+  "rules": [
+    {
+      "type": "Text",
+      "globs": ["**/*.hbs", "**/*.hbs?raw", "**/*.sql", "**/*.sql?raw"],
+      "fallthrough": true,
+    },
+  ],
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true,
@@ -14,6 +21,8 @@
   "vars": {
     // Default model for OpenCode sessions
     "DEFAULT_MODEL": "opencode/claude-opus-4-5",
+    "BONK_VERSION": "dev",
+    "BONK_COMMIT": "unknown",
     // ASK_SECRET: Set via wrangler secret for production
     // Empty or missing = /ask endpoint is disabled
     // Allowed orgs/users for GitHub App installation

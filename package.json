@@ -6,7 +6,7 @@
   "license": "Apache-2.0",
   "scripts": {
     "build": "flue build --target cloudflare",
-    "deploy": "BONK_VERSION=\"$(git describe --tags --always)\" BONK_COMMIT=\"$(git rev-parse --short HEAD)\" flue build --target cloudflare && wrangler deploy --config dist/ask_bonk/wrangler.json",
+    "deploy": "flue build --target cloudflare && wrangler deploy --config dist/ask_bonk/wrangler.json --var BONK_VERSION:\"$(git describe --tags --always)\" --var BONK_COMMIT:\"$(git rev-parse --short HEAD)\"",
     "dev": "flue dev --target cloudflare",
     "test": "vitest",
     "cf-typegen": "wrangler types",

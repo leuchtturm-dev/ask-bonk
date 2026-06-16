@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { Hono } from "hono";
 import {
   extractPrompt,
   detectFork,
@@ -18,6 +19,7 @@ import { sanitizeSecrets } from "../src/log";
 import { queryAnalyticsEngine, emitMetric } from "../src/metrics";
 import app from "../src/app";
 import { MetricsError } from "../src/errors";
+import { channel as githubChannel } from "../src/channels/github";
 import { validateOpenCodeVersion } from "../github/script/context";
 import type { Env } from "../src/types";
 import type { WorkflowRunPayload } from "../src/types";
@@ -36,6 +38,8 @@ function createMockEnv(overrides: Partial<Env> = {}): Env {
     GITHUB_WEBHOOK_SECRET: "test-secret",
     OPENCODE_API_KEY: "test-api-key",
     DEFAULT_MODEL: "anthropic/claude-opus-4-5",
+    BONK_VERSION: "dev",
+    BONK_COMMIT: "unknown",
     ALLOWED_ORGS: [],
     ...overrides,
   };
@@ -55,7 +59,9 @@ function createMockEnv(overrides: Partial<Env> = {}): Env {
         prop === "CLOUDFLARE_ACCOUNT_ID" ||
         prop === "ANALYTICS_TOKEN" ||
         prop === "ENABLE_PAT_EXCHANGE" ||
-        prop === "BONK_MAX_TRACK_SECS"
+        prop === "BONK_MAX_TRACK_SECS" ||
+        prop === "BONK_VERSION" ||
+        prop === "BONK_COMMIT"
       ) {
         return undefined;
       }
@@ -566,6 +572,56 @@ describe("Webhook Verification", () => {
 
     const response = await app.fetch(request, env);
     expect(response.status).toBe(200);
+  });
+
+  it("does not accept the old public fallback secret on the generated Flue channel", async () => {
+    const env = createMockEnv();
+    const channelApp = new Hono<{ Bindings: Env }>();
+    const webhookRoute = githubChannel.routes[0];
+    expect(webhookRoute).toBeDefined();
+    channelApp.on("POST", "/channels/github/webhook", webhookRoute.handler);
+
+    const body = JSON.stringify({ zen: "Keep it logically awesome." });
+    const request = new Request("https://example.com/channels/github/webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-github-delivery": "test-delivery-id",
+        "x-github-event": "ping",
+        "x-hub-signature-256": await signGitHubWebhook(body, "__missing_github_webhook_secret__"),
+      },
+      body,
+    });
+
+    const response = await channelApp.fetch(request, env);
+    expect(response.status).toBe(401);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// App Metadata
+// ---------------------------------------------------------------------------
+
+describe("App Metadata", () => {
+  it("returns configured version metadata", async () => {
+    const env = createMockEnv({ BONK_VERSION: "v1.2.3", BONK_COMMIT: "abc123" });
+
+    const response = await app.fetch(new Request("https://example.com/version"), env);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ version: "v1.2.3", commit: "abc123" });
+  });
+
+  it("returns safe version metadata defaults", async () => {
+    const env = createMockEnv({
+      BONK_VERSION: undefined as unknown as string,
+      BONK_COMMIT: undefined as unknown as string,
+    });
+
+    const response = await app.fetch(new Request("https://example.com/version"), env);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ version: "dev", commit: "unknown" });
   });
 });
 
