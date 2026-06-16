@@ -16,8 +16,8 @@ import {
 } from "../src/oidc";
 import { sanitizeSecrets } from "../src/log";
 import { queryAnalyticsEngine, emitMetric } from "../src/metrics";
-import { verifyWebhook, createWebhooks } from "../src/github";
-import { GitHubAPIError, MetricsError } from "../src/errors";
+import app from "../src/app";
+import { MetricsError } from "../src/errors";
 import { validateOpenCodeVersion } from "../github/script/context";
 import type { Env } from "../src/types";
 import type { WorkflowRunPayload } from "../src/types";
@@ -64,6 +64,20 @@ function createMockEnv(overrides: Partial<Env> = {}): Env {
       );
     },
   });
+}
+
+async function signGitHubWebhook(body: string, secret: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body));
+  return `sha256=${Array.from(new Uint8Array(signature))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("")}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -506,33 +520,25 @@ describe("PAT Exchange Security", () => {
 // ---------------------------------------------------------------------------
 
 describe("Webhook Verification", () => {
-  it("returns error Result for missing webhook headers", async () => {
+  it("rejects requests without the JSON webhook content type", async () => {
     const env = createMockEnv();
-    const webhooks = createWebhooks(env);
 
-    // Request with no GitHub webhook headers
     const request = new Request("https://example.com/webhooks", {
       method: "POST",
       body: "{}",
     });
 
-    const result = await verifyWebhook(webhooks, request);
-    expect(result.isErr()).toBe(true);
-    if (result.isErr()) {
-      expect(GitHubAPIError.is(result.error)).toBe(true);
-      expect(result.error.message).toContain("Missing required webhook headers");
-      expect(result.error.operation).toBe("verifyWebhook");
-    }
+    const response = await app.fetch(request, env);
+    expect(response.status).toBe(415);
   });
 
-  it("returns error Result for invalid signature", async () => {
+  it("rejects requests with an invalid signature", async () => {
     const env = createMockEnv();
-    const webhooks = createWebhooks(env);
 
-    // Request with headers but bad signature
     const request = new Request("https://example.com/webhooks", {
       method: "POST",
       headers: {
+        "content-type": "application/json",
         "x-github-delivery": "test-delivery-id",
         "x-github-event": "issue_comment",
         "x-hub-signature-256": "sha256=invalid",
@@ -540,12 +546,26 @@ describe("Webhook Verification", () => {
       body: JSON.stringify({ action: "created" }),
     });
 
-    const result = await verifyWebhook(webhooks, request);
-    expect(result.isErr()).toBe(true);
-    if (result.isErr()) {
-      expect(GitHubAPIError.is(result.error)).toBe(true);
-      expect(result.error.operation).toBe("verifyWebhook");
-    }
+    const response = await app.fetch(request, env);
+    expect(response.status).toBe(401);
+  });
+
+  it("accepts valid ping deliveries through the Flue GitHub channel", async () => {
+    const env = createMockEnv();
+    const body = JSON.stringify({ zen: "Keep it logically awesome." });
+    const request = new Request("https://example.com/webhooks", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-github-delivery": "test-delivery-id",
+        "x-github-event": "ping",
+        "x-hub-signature-256": await signGitHubWebhook(body, env.GITHUB_WEBHOOK_SECRET),
+      },
+      body,
+    });
+
+    const response = await app.fetch(request, env);
+    expect(response.status).toBe(200);
   });
 });
 

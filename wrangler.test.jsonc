@@ -2,12 +2,8 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ask-bonk",
   "main": "src/index.ts",
-  "compatibility_date": "2026-02-14",
+  "compatibility_date": "2026-06-16",
   "compatibility_flags": ["nodejs_compat"],
-  "define": {
-    "__VERSION__": "\"test\"",
-    "__COMMIT__": "\"abc1234\"",
-  },
   "observability": {
     "enabled": true,
   },

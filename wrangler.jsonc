@@ -2,20 +2,8 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ask-bonk",
   "main": "src/index.ts",
-  "compatibility_date": "2026-02-14",
-  "rules": [
-    {
-      "type": "Text",
-      "globs": ["**/*.hbs", "**/*.sql"],
-      "fallthrough": true,
-    },
-  ],
+  "compatibility_date": "2026-06-16",
   "compatibility_flags": ["nodejs_compat"],
-  // Build-time constants replaced by esbuild. Deploy script overrides with real values.
-  "define": {
-    "__VERSION__": "\"dev\"",
-    "__COMMIT__": "\"unknown\"",
-  },
   "observability": {
     "enabled": true,
     "traces": {
@@ -55,6 +43,10 @@
     {
       "tag": "v4",
       "new_sqlite_classes": ["RepoAgent", "Sandbox"],
+    },
+    {
+      "tag": "v5",
+      "new_sqlite_classes": ["FlueRegistry", "FlueControlPlaneAgent"],
     },
   ],
   "kv_namespaces": [
