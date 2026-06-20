@@ -94,6 +94,17 @@ export class MetricsError extends TaggedError("MetricsError")<{
   }
 }
 
+export class SlackAPIError extends TaggedError("SlackAPIError")<{
+  operation: string;
+  message: string;
+  cause: unknown;
+}>() {
+  constructor(args: { operation: string; cause: unknown }) {
+    const msg = args.cause instanceof Error ? args.cause.message : String(args.cause);
+    super({ ...args, message: `Slack API ${args.operation} failed: ${msg}` });
+  }
+}
+
 // Union types for Result error channels
 export type AuthError = OIDCValidationError | AuthorizationError;
 export type TokenExchangeError = AuthError | InstallationNotFoundError | GitHubAPIError;

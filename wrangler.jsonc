@@ -25,8 +25,17 @@
     "BONK_COMMIT": "unknown",
     // ASK_SECRET: Set via wrangler secret for production
     // Empty or missing = /ask endpoint is disabled
+    // SLACK_SIGNING_SECRET and SLACK_BOT_TOKEN: Set via wrangler secret to enable Slack
+    // SLACK_STATUS_CHANNEL_ID: Set as a var or secret to post/update workflow status messages
     // Allowed orgs/users for GitHub App installation
-    "ALLOWED_ORGS": ["elithrar", "cloudflare", "ask-bonk", "replicate", "emdash-cms", "Cloudflare-Studio"],
+    "ALLOWED_ORGS": [
+      "elithrar",
+      "cloudflare",
+      "ask-bonk",
+      "replicate",
+      "emdash-cms",
+      "Cloudflare-Studio",
+    ],
   },
   // "containers": [
   // 	{

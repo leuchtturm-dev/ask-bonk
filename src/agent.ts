@@ -13,6 +13,11 @@ import { createLogger, sanitizeSecrets, type Logger } from "./log";
 import { emitMetric } from "./metrics";
 import { createOctokitForRepo, type InstallationSource, type InstallationLookup } from "./oidc";
 import { WORKFLOW_POLL_INTERVAL_SECS, DEFAULT_MAX_WORKFLOW_TRACKING_MS } from "./constants";
+import {
+  postBonkStatusMessage,
+  updateBonkStatusMessage,
+  type SlackMessageRef,
+} from "./channels/slack";
 
 export interface CheckStatusPayload {
   runId: number;
@@ -28,6 +33,8 @@ export interface CheckStatusPayload {
   // instead of posting a duplicate. Also prevents retry loops on transient failures.
   waitingCommentPosted?: boolean;
   waitingCommentId?: number;
+  // Slack status message posted for this run, used for edit-in-place updates.
+  slackStatusMessage?: SlackMessageRef;
 }
 
 // TTL for recently finalized runs (1 hour). Entries older than this are pruned
@@ -193,6 +200,35 @@ export class RepoAgent extends Agent<Env, RepoAgentState> {
     });
   }
 
+  private async updateSlackStatus(
+    runId: number,
+    runUrl: string,
+    issueNumber: number,
+    status: string,
+    actor: string | undefined,
+    ref: SlackMessageRef | undefined,
+    log: Logger,
+  ): Promise<SlackMessageRef | undefined> {
+    const result = await updateBonkStatusMessage(this.env, ref, {
+      owner: this.owner,
+      repo: this.repo,
+      runId,
+      runUrl,
+      issueNumber,
+      status,
+      actor,
+    });
+    if (result.isErr()) {
+      log.errorWithException("slack_status_update_failed", result.error, { status });
+      return ref;
+    }
+    if (result.value) {
+      log.info("slack_status_updated", { status });
+      return result.value;
+    }
+    return ref;
+  }
+
   async trackRun(
     runId: number,
     runUrl: string,
@@ -203,7 +239,7 @@ export class RepoAgent extends Agent<Env, RepoAgentState> {
     const log = this.logger(runId, issueNumber);
     log.info("run_tracking_started", { run_url: runUrl, actor });
 
-    const payload: CheckStatusPayload = {
+    let payload: CheckStatusPayload = {
       runId,
       runUrl,
       issueNumber,
@@ -213,9 +249,26 @@ export class RepoAgent extends Agent<Env, RepoAgentState> {
       reactionTargetType: reactionTarget?.type,
     };
 
-    // Store in activeRuns state
-    const activeRuns = { ...this.state.activeRuns, [runId]: payload };
-    this.patchState({ activeRuns });
+    // Store tracking state before best-effort Slack I/O so slow Slack calls do
+    // not prevent subsequent finalize/webhook paths from seeing the run.
+    this.patchState({ activeRuns: { ...this.state.activeRuns, [runId]: payload } });
+
+    const slackResult = await postBonkStatusMessage(this.env, {
+      owner: this.owner,
+      repo: this.repo,
+      runId,
+      runUrl,
+      issueNumber,
+      status: "running",
+      actor,
+    });
+    if (slackResult.isErr()) {
+      log.errorWithException("slack_status_post_failed", slackResult.error);
+    } else if (slackResult.value) {
+      payload = { ...payload, slackStatusMessage: slackResult.value };
+      this.patchState({ activeRuns: { ...this.state.activeRuns, [runId]: payload } });
+      log.info("slack_status_posted");
+    }
 
     // Schedule polling as safety net. Failure to schedule is non-fatal:
     // the workflow_run webhook acts as a secondary safety net.
@@ -259,9 +312,19 @@ export class RepoAgent extends Agent<Env, RepoAgentState> {
         });
         return;
       }
-      log.warn("run_not_active_posting_failure", {
-        recently_finalized: !!this.state.recentlyFinalizedRuns?.[runId],
-      });
+      const recentlyFinalized = !!this.state.recentlyFinalizedRuns?.[runId];
+      log.warn("run_not_active_posting_failure", { recently_finalized: recentlyFinalized });
+      if (!recentlyFinalized) {
+        await this.updateSlackStatus(
+          runId,
+          fallbackRunUrl,
+          issueNumber,
+          status,
+          actor,
+          undefined,
+          log,
+        );
+      }
       await this.postFailureComment(
         runId,
         fallbackRunUrl,
@@ -275,6 +338,16 @@ export class RepoAgent extends Agent<Env, RepoAgentState> {
     }
 
     this.removeAndRecordRun(runId);
+
+    await this.updateSlackStatus(
+      runId,
+      run.runUrl,
+      run.issueNumber,
+      status,
+      actor ?? run.actor,
+      run.slackStatusMessage,
+      log,
+    );
 
     if (status === "success") {
       log.info("run_completed_no_comment", { status });
@@ -311,6 +384,15 @@ export class RepoAgent extends Agent<Env, RepoAgentState> {
         max_tracking_ms: maxTrackingMs,
       });
       this.removeAndRecordRun(runId);
+      await this.updateSlackStatus(
+        runId,
+        runUrl,
+        issueNumber,
+        "timeout",
+        payload.actor,
+        payload.slackStatusMessage,
+        log,
+      );
       await this.postFailureComment(runId, runUrl, issueNumber, "timeout", payload);
       return;
     }
@@ -342,9 +424,27 @@ export class RepoAgent extends Agent<Env, RepoAgentState> {
     if (status.status === "completed") {
       this.removeAndRecordRun(runId);
       if (status.conclusion === "success") {
+        await this.updateSlackStatus(
+          runId,
+          runUrl,
+          issueNumber,
+          "success",
+          payload.actor,
+          payload.slackStatusMessage,
+          log,
+        );
         log.info("run_succeeded");
         return;
       }
+      await this.updateSlackStatus(
+        runId,
+        runUrl,
+        issueNumber,
+        status.conclusion ?? "failure",
+        payload.actor,
+        payload.slackStatusMessage,
+        log,
+      );
       await this.postFailureComment(
         runId,
         runUrl,
@@ -376,6 +476,16 @@ export class RepoAgent extends Agent<Env, RepoAgentState> {
         // transient API errors — the comment is best-effort.
         payload = { ...payload, waitingCommentPosted: true };
       }
+      const slackStatusMessage = await this.updateSlackStatus(
+        runId,
+        runUrl,
+        issueNumber,
+        "waiting",
+        payload.actor,
+        payload.slackStatusMessage,
+        log,
+      );
+      payload = { ...payload, slackStatusMessage };
       const activeRuns = { ...this.state.activeRuns, [runId]: payload };
       this.patchState({ activeRuns });
     }

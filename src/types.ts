@@ -33,6 +33,11 @@ export interface Env {
   // the GitHub Actions workflow-level maximum). You're unlikely to need to
   // reduce this; set it higher only for self-hosted runners with custom limits.
   BONK_MAX_TRACK_SECS?: string;
+  // Slack integration. Signing secret verifies Flue Slack channel ingress;
+  // bot token and status channel enable outbound workflow status messages.
+  SLACK_SIGNING_SECRET?: string;
+  SLACK_BOT_TOKEN?: string;
+  SLACK_STATUS_CHANNEL_ID?: string;
   // Version metadata exposed by /version.
   BONK_VERSION: Cloudflare.Env["BONK_VERSION"];
   BONK_COMMIT: Cloudflare.Env["BONK_COMMIT"];
