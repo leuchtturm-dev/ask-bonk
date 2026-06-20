@@ -18,11 +18,11 @@ export interface Env {
   GITHUB_APP_PRIVATE_KEY: string;
   GITHUB_WEBHOOK_SECRET: string;
   OPENCODE_API_KEY: string;
-  DEFAULT_MODEL: string;
+  DEFAULT_MODEL: Cloudflare.Env["DEFAULT_MODEL"];
   // Shared secret for /ask endpoint - empty means endpoint is disabled
   ASK_SECRET?: string;
   // Allowed orgs/users for GitHub App installation - JSON array binding
-  ALLOWED_ORGS: string[];
+  ALLOWED_ORGS: Cloudflare.Env["ALLOWED_ORGS"];
   // Analytics Engine query API credentials (for /stats endpoint)
   CLOUDFLARE_ACCOUNT_ID?: string;
   ANALYTICS_TOKEN?: string;
@@ -33,6 +33,9 @@ export interface Env {
   // the GitHub Actions workflow-level maximum). You're unlikely to need to
   // reduce this; set it higher only for self-hosted runners with custom limits.
   BONK_MAX_TRACK_SECS?: string;
+  // Version metadata exposed by /version.
+  BONK_VERSION: Cloudflare.Env["BONK_VERSION"];
+  BONK_COMMIT: Cloudflare.Env["BONK_COMMIT"];
 }
 
 // Request body for /ask endpoint
