@@ -20,6 +20,12 @@ import { queryAnalyticsEngine, emitMetric } from "../src/metrics";
 import app from "../src/app";
 import { MetricsError } from "../src/errors";
 import { channel as githubChannel } from "../src/channels/github";
+import {
+  channel as slackChannel,
+  formatBonkStatusMessage,
+  postSlackMessage,
+  updateSlackMessage,
+} from "../src/channels/slack";
 import { validateOpenCodeVersion } from "../github/script/context";
 import type { Env } from "../src/types";
 import type { WorkflowRunPayload } from "../src/types";
@@ -60,6 +66,9 @@ function createMockEnv(overrides: Partial<Env> = {}): Env {
         prop === "ANALYTICS_TOKEN" ||
         prop === "ENABLE_PAT_EXCHANGE" ||
         prop === "BONK_MAX_TRACK_SECS" ||
+        prop === "SLACK_SIGNING_SECRET" ||
+        prop === "SLACK_BOT_TOKEN" ||
+        prop === "SLACK_STATUS_CHANNEL_ID" ||
         prop === "BONK_VERSION" ||
         prop === "BONK_COMMIT"
       ) {
@@ -81,9 +90,29 @@ async function signGitHubWebhook(body: string, secret: string): Promise<string> 
     ["sign"],
   );
   const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body));
-  return `sha256=${Array.from(new Uint8Array(signature))
+  return `sha256=${toHex(signature)}`;
+}
+
+async function signSlackWebhook(body: string, secret: string, timestamp: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(`v0:${timestamp}:${body}`),
+  );
+  return `v0=${toHex(signature)}`;
+}
+
+function toHex(buffer: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buffer))
     .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("")}`;
+    .join("");
 }
 
 // ---------------------------------------------------------------------------
@@ -595,6 +624,89 @@ describe("Webhook Verification", () => {
 
     const response = await channelApp.fetch(request, env);
     expect(response.status).toBe(401);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slack Integration
+// ---------------------------------------------------------------------------
+
+describe("Slack Integration", () => {
+  it("only publishes the supported slash-command surface", () => {
+    expect(slackChannel.routes.map((route) => route.path)).toEqual(["/commands"]);
+  });
+
+  it("does not accept an arbitrary fallback signing secret", async () => {
+    const env = createMockEnv();
+    const channelApp = new Hono<{ Bindings: Env }>();
+    const commandRoute = slackChannel.routes.find((route) => route.path === "/commands");
+    expect(commandRoute).toBeDefined();
+    channelApp.on("POST", "/channels/slack/commands", commandRoute!.handler);
+
+    const body = new URLSearchParams({ command: "/bonk-status", text: "" }).toString();
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const request = new Request("https://example.com/channels/slack/commands", {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "x-slack-request-timestamp": timestamp,
+        "x-slack-signature": await signSlackWebhook(body, "public-fallback-secret", timestamp),
+      },
+      body,
+    });
+
+    const response = await channelApp.fetch(request, env);
+    expect(response.status).toBe(401);
+  });
+
+  it("formats workflow status messages for Slack", () => {
+    expect(
+      formatBonkStatusMessage({
+        owner: "acme",
+        repo: "widgets",
+        issueNumber: 42,
+        runId: 123,
+        runUrl: "https://github.com/acme/widgets/actions/runs/123",
+        status: "running",
+        actor: "octocat",
+      }),
+    ).toContain("Bonk run for acme/widgets#42 by octocat: running");
+  });
+
+  it("sends and updates Slack messages with configured credentials", async () => {
+    const env = createMockEnv({
+      SLACK_BOT_TOKEN: "xoxb-test-token",
+      SLACK_STATUS_CHANNEL_ID: "C123",
+    });
+    const calls: string[] = [];
+    const fakeFetch = async (url: string | URL) => {
+      calls.push(String(url));
+      const isUpdate = String(url).endsWith("chat.update");
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          channel: "C123",
+          ts: isUpdate ? "1700000000.000002" : "1700000000.000001",
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    };
+
+    const postResult = await postSlackMessage(env, { text: "started" }, { fetch: fakeFetch });
+    expect(postResult.isOk()).toBe(true);
+    if (postResult.isErr()) throw postResult.error;
+    expect(postResult.value).toEqual({ channelId: "C123", messageTs: "1700000000.000001" });
+
+    const updateResult = await updateSlackMessage(env, postResult.value, "finished", {
+      fetch: fakeFetch,
+    });
+    expect(updateResult.isOk()).toBe(true);
+    if (updateResult.isErr()) throw updateResult.error;
+    expect(updateResult.value).toEqual({ channelId: "C123", messageTs: "1700000000.000002" });
+    expect(calls).toEqual([
+      "https://slack.com/api/chat.postMessage",
+      "https://slack.com/api/chat.update",
+    ]);
   });
 });
 

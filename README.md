@@ -267,6 +267,20 @@ sst/ion (webhook)             | ████████████████
 ask-bonk/ask-bonk (finalize)  | ████████████                             | 45
 ```
 
+## Slack Integration
+
+Bonk exposes a first-party Flue Slack route when Slack secrets are configured:
+
+- `/channels/slack/commands` for slash commands such as `/bonk-status`
+
+Set these bindings to enable Slack:
+
+- `SLACK_SIGNING_SECRET` — Slack request verification secret
+- `SLACK_BOT_TOKEN` — bot token used for outbound Web API calls
+- `SLACK_STATUS_CHANNEL_ID` — channel where Bonk posts and edits workflow run status messages
+
+Status messages are best-effort. GitHub comments remain the source of truth if Slack is not configured or Slack API calls fail.
+
 ## `/ask` Sandbox Mode
 
 > :warning: **Experimental and work-in-progress.** Uses the [Cloudflare Sandbox SDK](https://sandbox.cloudflare.com/) to run off-GitHub tasks.
@@ -307,16 +321,16 @@ Bonk is configured via your workflow file and OpenCode's config. There are no bu
 
 ### Workflow Inputs
 
-| Input                | Description                                                                      | Required |
-| -------------------- | -------------------------------------------------------------------------------- | -------- |
-| `model`              | Model to use (e.g., `opencode/claude-opus-4-5`)                                  | Yes      |
-| `mentions`           | Comma-separated triggers (e.g., `/bonk,@ask-bonk`)                               | No       |
-| `permissions`        | Required permission: `admin`, `write`, `any`, or `CODEOWNERS`                    | No       |
-| `token_permissions`  | Scope the installation token: `NO_PUSH`, `WRITE`, or JSON                        | No       |
-| `opencode_version`   | Pin to a specific OpenCode version (e.g., `"1.2.16"`). Defaults to `"latest"`.   | No       |
-| `opencode_dev`       | Install from the dev channel instead of latest release (`"true"` / `"false"`)    | No       |
-| `agent`              | OpenCode agent to use                                                            | No       |
-| `prompt`             | Custom prompt (for scheduled/dispatch workflows)                                 | No       |
+| Input               | Description                                                                    | Required |
+| ------------------- | ------------------------------------------------------------------------------ | -------- |
+| `model`             | Model to use (e.g., `opencode/claude-opus-4-5`)                                | Yes      |
+| `mentions`          | Comma-separated triggers (e.g., `/bonk,@ask-bonk`)                             | No       |
+| `permissions`       | Required permission: `admin`, `write`, `any`, or `CODEOWNERS`                  | No       |
+| `token_permissions` | Scope the installation token: `NO_PUSH`, `WRITE`, or JSON                      | No       |
+| `opencode_version`  | Pin to a specific OpenCode version (e.g., `"1.2.16"`). Defaults to `"latest"`. | No       |
+| `opencode_dev`      | Install from the dev channel instead of latest release (`"true"` / `"false"`)  | No       |
+| `agent`             | OpenCode agent to use                                                          | No       |
+| `prompt`            | Custom prompt (for scheduled/dispatch workflows)                               | No       |
 
 ### OpenCode Config
 
